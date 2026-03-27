@@ -1,6 +1,6 @@
-import React from 'react'
-import { Table, Tag, Empty, Typography, Tooltip } from 'antd'
-import { FileOutlined, FolderOutlined } from '@ant-design/icons'
+import React, { useState } from 'react'
+import { Table, Tag, Empty, Typography, Tooltip, Button, Space, message, Popconfirm } from 'antd'
+import { FileOutlined, FolderOutlined, DownloadOutlined } from '@ant-design/icons'
 import { useSearchStore } from '../stores/search-store'
 
 const { Text } = Typography
@@ -26,13 +26,40 @@ interface ResultListProps {
 
 const ResultList: React.FC<ResultListProps> = ({ fullPage = false }) => {
   const { searchType, results, loading } = useSearchStore()
+  const [downloading, setDownloading] = useState<string | null>(null)
+
+  const handleDownload = async (record: SearchResult) => {
+    if (record.kind === 'dir') {
+      message.warning('暂不支持下载目录')
+      return
+    }
+
+    setDownloading(record.path)
+    try {
+      // 获取下载路径设置
+      const settingsStr = localStorage.getItem('svn-searcher-settings')
+      const settings = settingsStr ? JSON.parse(settingsStr) : {}
+      const downloadPath = settings.downloadPath || undefined
+
+      const result = await window.api.file.download(record.path, downloadPath)
+      if (result.success) {
+        message.success(`已下载到: ${result.path}`)
+      } else {
+        message.error(result.error || '下载失败')
+      }
+    } catch (error) {
+      message.error('下载失败: ' + (error as Error).message)
+    } finally {
+      setDownloading(null)
+    }
+  }
 
   const renderFilenameColumns = () => [
     {
       title: '类型',
       dataIndex: 'kind',
       key: 'kind',
-      width: 80,
+      width: 60,
       render: (kind: string) => (
         kind === 'dir' ? <FolderOutlined style={{ color: '#faad14' }} /> : <FileOutlined style={{ color: '#1890ff' }} />
       )
@@ -41,7 +68,7 @@ const ResultList: React.FC<ResultListProps> = ({ fullPage = false }) => {
       title: '文件名',
       dataIndex: 'name',
       key: 'name',
-      render: (name: string, record: SearchResult) => (
+      render: (name: string) => (
         <Text code>{name}</Text>
       )
     },
@@ -60,11 +87,31 @@ const ResultList: React.FC<ResultListProps> = ({ fullPage = false }) => {
       title: '匹配度',
       dataIndex: 'score',
       key: 'score',
-      width: 100,
+      width: 80,
       render: (score: number) => (
         <Tag color={score < 0.2 ? 'green' : score < 0.5 ? 'orange' : 'red'}>
           {(1 - score).toFixed(2)}
         </Tag>
+      )
+    },
+    {
+      title: '操作',
+      key: 'action',
+      width: 80,
+      render: (_: any, record: SearchResult) => (
+        record.kind === 'file' ? (
+          <Tooltip title="下载文件">
+            <Button
+              type="link"
+              size="small"
+              icon={<DownloadOutlined />}
+              loading={downloading === record.path}
+              onClick={() => handleDownload(record)}
+            >
+              下载
+            </Button>
+          </Tooltip>
+        ) : null
       )
     }
   ]
@@ -74,11 +121,11 @@ const ResultList: React.FC<ResultListProps> = ({ fullPage = false }) => {
       title: '文件',
       dataIndex: 'path',
       key: 'path',
-      width: 300,
+      width: 280,
       ellipsis: true,
       render: (path: string) => (
         <Tooltip title={path}>
-          <Text code ellipsis style={{ maxWidth: 280 }}>{path}</Text>
+          <Text code ellipsis style={{ maxWidth: 260 }}>{path}</Text>
         </Tooltip>
       )
     },
@@ -86,7 +133,7 @@ const ResultList: React.FC<ResultListProps> = ({ fullPage = false }) => {
       title: '行号',
       dataIndex: 'line',
       key: 'line',
-      width: 80,
+      width: 70,
       render: (line: number) => <Tag color="blue">{line}</Tag>
     },
     {
@@ -108,6 +155,42 @@ const ResultList: React.FC<ResultListProps> = ({ fullPage = false }) => {
           </Text>
         )
       }
+    },
+    {
+      title: '操作',
+      key: 'action',
+      width: 80,
+      render: (_: any, record: ContentSearchResult) => (
+        <Tooltip title="下载文件">
+          <Button
+            type="link"
+            size="small"
+            icon={<DownloadOutlined />}
+            loading={downloading === record.path}
+            onClick={async () => {
+              setDownloading(record.path)
+              try {
+                const settingsStr = localStorage.getItem('svn-searcher-settings')
+                const settings = settingsStr ? JSON.parse(settingsStr) : {}
+                const downloadPath = settings.downloadPath || undefined
+
+                const result = await window.api.file.download(record.path, downloadPath)
+                if (result.success) {
+                  message.success(`已下载到: ${result.path}`)
+                } else {
+                  message.error(result.error || '下载失败')
+                }
+              } catch (error) {
+                message.error('下载失败')
+              } finally {
+                setDownloading(null)
+              }
+            }}
+          >
+            下载
+          </Button>
+        </Tooltip>
+      )
     }
   ]
 

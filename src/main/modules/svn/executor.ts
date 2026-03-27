@@ -83,26 +83,52 @@ export class SVNExecutor {
     })
   }
 
-  async testConnection(url: string, username: string, password: string): Promise<boolean> {
+  async testConnection(url: string, username: string, password: string): Promise<{ success: boolean; error?: string }> {
     try {
       await this.execute(['info', url], username, password)
-      return true
-    } catch {
-      return false
+      return { success: true }
+    } catch (error) {
+      const errorMsg = (error as Error).message
+      console.error('SVN connection error:', errorMsg)
+      return { success: false, error: errorMsg }
     }
   }
 
   async list(path: string, username?: string, password?: string): Promise<SVNEntry[]> {
+    console.log('SVN list 执行:', { path, username: username || '(空)', hasPassword: !!password })
     const output = await this.execute(['list', path], username, password)
+    console.log('SVN list 输出长度:', output.length)
+    console.log('SVN list 输出预览:', output.substring(0, 1000))
+
     const result = await parseXML(output) as any
+    console.log('XML 解析结果 keys:', Object.keys(result))
 
     const entries: SVNEntry[] = []
-    const lists = result.lists?.list || []
+
+    // 处理可能的两种 XML 结构:
+    // 1. <lists><list>...</list></lists>
+    // 2. <list>...</list> (直接以 list 为根)
+    let lists: any[] = []
+
+    if (result.lists?.list) {
+      lists = Array.isArray(result.lists.list) ? result.lists.list : [result.lists.list]
+      console.log('找到 lists.list 结构')
+    } else if (result.list) {
+      lists = Array.isArray(result.list) ? result.list : [result.list]
+      console.log('找到 list 根结构')
+    } else {
+      console.log('未找到预期的 XML 结构，尝试其他路径')
+      // 打印完整结构以便调试
+      console.log('完整 XML 结构:', JSON.stringify(result, null, 2))
+    }
+
+    console.log('解析到的 lists 数量:', lists.length)
 
     for (const list of lists) {
       const listEntries = list.entry || []
+      console.log('list 中的 entry 数量:', listEntries.length)
       for (const entry of listEntries) {
-        entries.push({
+        const entryData = {
           name: entry.name?.[0] || '',
           kind: entry.$.kind === 'file' ? 'file' : 'dir',
           path: path + (path.endsWith('/') ? '' : '/') + entry.name?.[0],
@@ -110,10 +136,13 @@ export class SVNExecutor {
           revision: entry.commit?.[0]?.$.revision ? parseInt(entry.commit[0].$.revision, 10) : undefined,
           author: entry.commit?.[0]?.author?.[0],
           date: entry.commit?.[0]?.date?.[0]
-        })
+        }
+        console.log('添加条目:', entryData.name, entryData.kind)
+        entries.push(entryData)
       }
     }
 
+    console.log('SVN list 返回条目数:', entries.length)
     return entries
   }
 

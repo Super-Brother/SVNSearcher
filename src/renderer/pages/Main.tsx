@@ -1,36 +1,48 @@
 import React, { useEffect, useState } from 'react'
-import { Layout, Menu, Button, Dropdown, Typography, Space, Spin, message } from 'antd'
+import { Layout, Menu, Button, Dropdown, Typography, Space, Spin, message, Select, Tag } from 'antd'
 import {
   FolderOutlined,
-  FileOutlined,
   SearchOutlined,
   HistoryOutlined,
   SettingOutlined,
   LogoutOutlined,
   ReloadOutlined,
-  SyncOutlined
+  SyncOutlined,
+  DatabaseOutlined,
+  DownOutlined
 } from '@ant-design/icons'
 import { useAuthStore } from '../stores/auth-store'
-import { useSvnStore } from '../stores/svn-store'
-import { useSearchStore } from '../stores/search-store'
 import DirectoryTree from '../components/DirectoryTree'
 import SearchBar from '../components/SearchBar'
 import ResultList from '../components/ResultList'
 import HistoryPanel from '../components/HistoryPanel'
+import SettingsModal from '../components/SettingsModal'
 
 const { Header, Sider, Content } = Layout
 const { Text } = Typography
 
+interface Repository {
+  id: string
+  name: string
+  url: string
+  username: string
+  password: string
+  lastLogin?: string
+}
+
 const Main: React.FC = () => {
-  const { username, url, logout } = useAuthStore()
-  const { setCurrentPath } = useSvnStore()
+  const { username, logout } = useAuthStore()
   const [collapsed, setCollapsed] = useState(false)
   const [activeTab, setActiveTab] = useState('browse')
   const [refreshStatus, setRefreshStatus] = useState({ isRunning: false, intervalMinutes: 10 })
   const [loading, setLoading] = useState(false)
+  const [settingsVisible, setSettingsVisible] = useState(false)
+  const [repositories, setRepositories] = useState<Repository[]>([])
+  const [currentRepo, setCurrentRepo] = useState<Repository | null>(null)
 
   useEffect(() => {
     loadRefreshStatus()
+    loadRepositories()
   }, [])
 
   const loadRefreshStatus = async () => {
@@ -38,11 +50,32 @@ const Main: React.FC = () => {
     setRefreshStatus(status)
   }
 
+  const loadRepositories = () => {
+    try {
+      const reposStr = localStorage.getItem('svn-repositories')
+      if (reposStr) {
+        const repos: Repository[] = JSON.parse(reposStr)
+        setRepositories(repos)
+        // 找到当前激活的仓库
+        const current = repos.find(r => r.lastLogin) || repos[0]
+        if (current) {
+          setCurrentRepo(current)
+        }
+      }
+    } catch (error) {
+      console.error('加载仓库列表失败:', error)
+    }
+  }
+
   const handleRefresh = async () => {
     setLoading(true)
     try {
-      // 清除缓存并重新加载
-      message.success('刷新成功')
+      const result = await window.api.index.start()
+      if (result.success) {
+        message.success(`刷新成功，共 ${result.count} 个条目`)
+      } else {
+        message.error(result.error || '刷新失败')
+      }
     } finally {
       setLoading(false)
     }
@@ -60,26 +93,67 @@ const Main: React.FC = () => {
     message.info('已停止自动刷新')
   }
 
+  const handleSwitchRepo = async (repoId: string) => {
+    const repo = repositories.find(r => r.id === repoId)
+    if (!repo) return
+
+    setLoading(true)
+    try {
+      const { login } = useAuthStore.getState()
+      const success = await login(repo.url, repo.username, repo.password)
+      if (success) {
+        // 更新最后登录时间
+        const updatedRepos = repositories.map(r => ({
+          ...r,
+          lastLogin: r.id === repo.id ? new Date().toISOString() : r.lastLogin
+        }))
+        setRepositories(updatedRepos)
+        setCurrentRepo(repo)
+        localStorage.setItem('svn-repositories', JSON.stringify(updatedRepos))
+        message.success(`已切换到: ${repo.name}`)
+      } else {
+        message.error('切换仓库失败')
+      }
+    } finally {
+      setLoading(false)
+    }
+  }
+
   const handleLogout = async () => {
     await logout()
   }
 
-  const userMenuItems = [
-    {
-      key: 'settings',
-      icon: <SettingOutlined />,
-      label: '设置'
-    },
-    {
-      type: 'divider'
-    },
-    {
-      key: 'logout',
-      icon: <LogoutOutlined />,
-      label: '退出登录',
-      onClick: handleLogout
-    }
-  ]
+  const handleSettingsClick = () => {
+    setSettingsVisible(true)
+  }
+
+  const handleSettingsClose = () => {
+    setSettingsVisible(false)
+    loadRepositories() // 刷新仓库列表
+  }
+
+  // 仓库选择下拉
+  const repoSelect = (
+    <div style={styles.repoSelector}>
+      <DatabaseOutlined style={{ marginRight: 8 }} />
+      <Select
+        value={currentRepo?.id}
+        style={{ minWidth: 200 }}
+        onChange={handleSwitchRepo}
+        loading={loading}
+        suffixIcon={<DownOutlined style={{ fontSize: 10 }} />}
+        options={repositories.map(r => ({
+          value: r.id,
+          label: (
+            <Space>
+              <span>{r.name}</span>
+              {r.id === currentRepo?.id && <Tag color="green" style={{ fontSize: 10 }}>当前</Tag>}
+            </Space>
+          )
+        }))}
+      />
+    </div>
+  )
 
   const sidebarItems = [
     {
@@ -136,25 +210,31 @@ const Main: React.FC = () => {
   return (
     <Layout style={styles.layout}>
       <Header style={styles.header}>
-        <div style={styles.logo}>
-          <FolderOutlined style={{ fontSize: 24, marginRight: 8 }} />
-          <Text strong style={{ color: '#fff', fontSize: 18 }}>SVN Searcher</Text>
+        <div style={styles.leftSection}>
+          <div style={styles.logo}>
+            <DatabaseOutlined style={{ fontSize: 24, marginRight: 8, color: '#667eea' }} />
+            <Text strong style={{ color: '#fff', fontSize: 18 }}>SVN Searcher</Text>
+          </div>
+
+          {/* 仓库选择器 */}
+          {repositories.length > 0 && repoSelect}
         </div>
 
         <Space style={styles.headerRight}>
           {refreshStatus.isRunning && (
             <Space>
               <SyncOutlined spin style={{ color: '#52c41a' }} />
-              <Text style={{ color: '#fff' }}>
-                自动刷新中 ({refreshStatus.intervalMinutes}分钟)
+              <Text style={{ color: '#fff', fontSize: 13 }}>
+                自动刷新 ({refreshStatus.intervalMinutes}分钟)
               </Text>
-              <Button size="small" onClick={handleStopAutoRefresh}>
+              <Button size="small" ghost onClick={handleStopAutoRefresh}>
                 停止
               </Button>
             </Space>
           )}
 
           <Button
+            ghost
             icon={<ReloadOutlined />}
             onClick={handleRefresh}
             loading={loading}
@@ -164,6 +244,7 @@ const Main: React.FC = () => {
 
           {!refreshStatus.isRunning && (
             <Button
+              ghost
               icon={<SyncOutlined />}
               onClick={handleStartAutoRefresh}
             >
@@ -171,11 +252,21 @@ const Main: React.FC = () => {
             </Button>
           )}
 
-          <Dropdown menu={{ items: userMenuItems }} placement="bottomRight">
-            <div style={styles.userInfo}>
-              <Text style={{ color: '#fff' }}>{username}</Text>
-            </div>
-          </Dropdown>
+          <Button
+            ghost
+            icon={<SettingOutlined />}
+            onClick={handleSettingsClick}
+          >
+            设置
+          </Button>
+
+          <Button
+            ghost
+            icon={<LogoutOutlined />}
+            onClick={handleLogout}
+          >
+            退出
+          </Button>
         </Space>
       </Header>
 
@@ -207,6 +298,11 @@ const Main: React.FC = () => {
           )}
         </Content>
       </Layout>
+
+      <SettingsModal
+        visible={settingsVisible}
+        onClose={handleSettingsClose}
+      />
     </Layout>
   )
 }
@@ -222,19 +318,25 @@ const styles: Record<string, React.CSSProperties> = {
     background: '#001529',
     padding: '0 24px'
   },
+  leftSection: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 24
+  },
   logo: {
     display: 'flex',
     alignItems: 'center'
   },
+  repoSelector: {
+    display: 'flex',
+    alignItems: 'center',
+    background: 'rgba(255, 255, 255, 0.1)',
+    padding: '4px 12px',
+    borderRadius: 6
+  },
   headerRight: {
     display: 'flex',
     alignItems: 'center'
-  },
-  userInfo: {
-    cursor: 'pointer',
-    padding: '8px 12px',
-    borderRadius: 4,
-    marginLeft: 8
   },
   sider: {
     borderRight: '1px solid #f0f0f0'

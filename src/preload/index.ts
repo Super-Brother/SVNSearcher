@@ -20,10 +20,20 @@ const api = {
 
   // 搜索
   search: {
-    filename: (query: string, basePath?: string) =>
-      ipcRenderer.invoke('search:filename', query, basePath),
-    content: (query: string, basePath?: string) =>
-      ipcRenderer.invoke('search:content', query, basePath)
+    filename: (query: string) => ipcRenderer.invoke('search:filename', query),
+    content: (query: string) => ipcRenderer.invoke('search:content', query)
+  },
+
+  // 索引管理
+  index: {
+    start: () => ipcRenderer.invoke('index:start'),
+    getStatus: () => ipcRenderer.invoke('index:getStatus'),
+    clear: () => ipcRenderer.invoke('index:clear'),
+    onProgress: (callback: (current: number) => void) => {
+      const handler = (_event: any, current: number) => callback(current)
+      ipcRenderer.on('index:progress', handler)
+      return () => ipcRenderer.removeListener('index:progress', handler)
+    }
   },
 
   // 刷新调度
@@ -36,6 +46,13 @@ const api = {
       ipcRenderer.on('refresh:triggered', handler)
       return () => ipcRenderer.removeListener('refresh:triggered', handler)
     }
+  },
+
+  // 文件下载
+  file: {
+    download: (svnPath: string, savePath?: string) =>
+      ipcRenderer.invoke('file:download', svnPath, savePath),
+    selectDownloadDir: () => ipcRenderer.invoke('file:selectDownloadDir')
   }
 }
 
