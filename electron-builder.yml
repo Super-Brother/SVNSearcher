@@ -1,0 +1,67 @@
+appId: com.svnsearcher.app
+productName: SVN Searcher
+copyright: Copyright © 2024 SVN Searcher Team
+
+directories:
+  buildResources: resources
+  output: dist
+
+files:
+  - "!**/{.git,.github,.idea,docs}/**"
+  - "!**/node_modules/*/{CHANGELOG.md,README.md,readme.md,readme}"
+  - "!**/node_modules/.bin"
+
+win:
+  icon: resources/icon.ico
+  target:
+    - target: nsis
+      arch:
+        - x64
+        - ia32
+    - target: portable
+      arch:
+        - x64
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  installerIcon: resources/icon.ico
+  uninstallerIcon: resources/icon.ico
+
+mac:
+  icon: resources/icon.icns
+  category: public.app-category.developer-tools
+  target:
+    - target: dmg
+      arch:
+        - x64
+        - arm64
+    - target: zip
+      arch:
+        - x64
+        - arm64
+  hardenedRuntime: true
+  gatekeeperAssess: false
+
+dmg:
+  contents:
+    - x: 130
+      y: 220
+    - x: 410
+      y: 220
+      type: link
+      path: /Applications
+
+linux:
+  icon: resources/icons
+  target:
+    - AppImage
+    - deb
+  category: Development
+
+publish:
+  provider: github
+  owner: svn-searcher
+  repo: svn-searcher
